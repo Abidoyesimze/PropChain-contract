@@ -22,28 +22,51 @@ mod propchain_contracts {
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum Error {
+        /// Property does not exist in the registry
         PropertyNotFound,
+        /// Caller is not authorized for this operation
         Unauthorized,
+        /// Property metadata is invalid or malformed
         InvalidMetadata,
-        NotCompliant,          // Recipient is not compliant
-        ComplianceCheckFailed, // Compliance registry call failed
+        /// Recipient is not compliant with regulatory requirements
+        NotCompliant,
+        /// Call to the compliance registry contract failed
+        ComplianceCheckFailed,
+        /// Escrow does not exist
         EscrowNotFound,
+        /// Escrow has already been released
         EscrowAlreadyReleased,
+        /// Badge does not exist for this property
         BadgeNotFound,
+        /// Badge type is invalid
         InvalidBadgeType,
+        /// Badge has already been issued to this property
         BadgeAlreadyIssued,
+        /// Caller is not an authorized verifier
         NotVerifier,
+        /// Appeal does not exist
         AppealNotFound,
+        /// Appeal status does not allow this operation
         InvalidAppealStatus,
+        /// Compliance registry contract address has not been configured
         ComplianceRegistryNotSet,
+        /// Oracle contract returned an error
         OracleError,
+        /// Contract is currently paused
         ContractPaused,
+        /// Contract is already paused
         AlreadyPaused,
+        /// Contract is not currently paused
         NotPaused,
+        /// A resume request is already in progress
         ResumeRequestAlreadyActive,
+        /// No active resume request exists
         ResumeRequestNotFound,
+        /// Not enough approvals to complete the operation
         InsufficientApprovals,
+        /// Caller has already approved this operation
         AlreadyApproved,
+        /// Caller is not authorized to pause the contract
         NotAuthorizedToPause,
     }
 
@@ -163,6 +186,24 @@ mod propchain_contracts {
         pub total_shares: u128,
         pub enabled: bool,
         pub created_at: u64,
+    }
+
+    /// Health status information for monitoring
+    #[derive(
+        Debug, Clone, PartialEq, scale::Encode, scale::Decode, ink::storage::traits::StorageLayout,
+    )]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub struct HealthStatus {
+        pub is_healthy: bool,
+        pub is_paused: bool,
+        pub contract_version: u32,
+        pub property_count: u64,
+        pub escrow_count: u64,
+        pub has_oracle: bool,
+        pub has_compliance_registry: bool,
+        pub has_fee_manager: bool,
+        pub block_number: u32,
+        pub timestamp: u64,
     }
 
     /// Global analytics data
@@ -826,6 +867,38 @@ mod propchain_contracts {
         #[ink(message)]
         pub fn admin(&self) -> AccountId {
             self.admin
+        }
+
+        /// Returns the full health status of the contract for monitoring
+        #[ink(message)]
+        pub fn health_check(&self) -> HealthStatus {
+            let is_paused = self.pause_info.paused;
+            HealthStatus {
+                is_healthy: !is_paused,
+                is_paused,
+                contract_version: self.version,
+                property_count: self.property_count,
+                escrow_count: self.escrow_count,
+                has_oracle: self.oracle.is_some(),
+                has_compliance_registry: self.compliance_registry.is_some(),
+                has_fee_manager: self.fee_manager.is_some(),
+                block_number: self.env().block_number(),
+                timestamp: self.env().block_timestamp(),
+            }
+        }
+
+        /// Simple liveness check that returns true if the contract is responsive
+        #[ink(message)]
+        pub fn ping(&self) -> bool {
+            true
+        }
+
+        /// Returns true if all critical dependencies (oracle, compliance, fees) are configured
+        #[ink(message)]
+        pub fn dependencies_healthy(&self) -> bool {
+            self.oracle.is_some()
+                && self.compliance_registry.is_some()
+                && self.fee_manager.is_some()
         }
 
         /// Set the oracle contract address
@@ -2258,6 +2331,20 @@ mod propchain_contracts {
             Ok(())
         }
 
+        /// Submits a verification request for a property badge.
+        ///
+        /// The property owner provides evidence (e.g. a URL to supporting documents)
+        /// and the request is queued for review by an authorized verifier.
+        ///
+        /// # Arguments
+        ///
+        /// * `property_id` - The property to request verification for
+        /// * `badge_type` - The type of badge being requested
+        /// * `evidence_url` - URL pointing to supporting evidence
+        ///
+        /// # Returns
+        ///
+        /// Returns `Result<u64, Error>` with the new verification request ID on success
         #[ink(message)]
         pub fn request_verification(
             &mut self,
@@ -2311,6 +2398,21 @@ mod propchain_contracts {
             Ok(request_id)
         }
 
+        /// Reviews a pending verification request and optionally issues the badge.
+        ///
+        /// Only authorized verifiers or the admin may call this. When approved,
+        /// the corresponding badge is automatically issued to the property.
+        ///
+        /// # Arguments
+        ///
+        /// * `request_id` - The verification request to review
+        /// * `approved` - Whether to approve or reject the request
+        /// * `expires_at` - Optional expiration timestamp for the badge
+        /// * `metadata_url` - URL pointing to badge metadata
+        ///
+        /// # Returns
+        ///
+        /// Returns `Result<(), Error>` indicating success or failure
         #[ink(message)]
         pub fn review_verification(
             &mut self,
@@ -2366,6 +2468,20 @@ mod propchain_contracts {
             Ok(())
         }
 
+        /// Submits an appeal against a revoked badge.
+        ///
+        /// Only the property owner may appeal. The badge must already be revoked
+        /// for the appeal to be valid.
+        ///
+        /// # Arguments
+        ///
+        /// * `property_id` - The property whose badge was revoked
+        /// * `badge_type` - The type of badge to appeal
+        /// * `reason` - Justification for the appeal
+        ///
+        /// # Returns
+        ///
+        /// Returns `Result<u64, Error>` with the new appeal ID on success
         #[ink(message)]
         pub fn submit_appeal(
             &mut self,
@@ -2428,6 +2544,19 @@ mod propchain_contracts {
             Ok(appeal_id)
         }
 
+        /// Resolves a pending appeal (admin only).
+        ///
+        /// If approved, the revoked badge is reinstated for the property.
+        ///
+        /// # Arguments
+        ///
+        /// * `appeal_id` - The appeal to resolve
+        /// * `approved` - Whether to approve or reject the appeal
+        /// * `resolution` - Explanation of the resolution decision
+        ///
+        /// # Returns
+        ///
+        /// Returns `Result<(), Error>` indicating success or failure
         #[ink(message)]
         pub fn resolve_appeal(
             &mut self,
@@ -2511,6 +2640,16 @@ mod propchain_contracts {
             badges
         }
 
+        /// Checks whether a property holds a valid (non-revoked) badge of the given type.
+        ///
+        /// # Arguments
+        ///
+        /// * `property_id` - The property to check
+        /// * `badge_type` - The badge type to look for
+        ///
+        /// # Returns
+        ///
+        /// Returns `true` if the property has the badge and it has not been revoked
         #[ink(message)]
         pub fn has_badge(&self, property_id: u64, badge_type: BadgeType) -> bool {
             if let Some(badge) = self.property_badges.get((property_id, badge_type)) {
@@ -2520,16 +2659,44 @@ mod propchain_contracts {
             }
         }
 
+        /// Returns the badge for a property and badge type, if one exists.
+        ///
+        /// # Arguments
+        ///
+        /// * `property_id` - The property to query
+        /// * `badge_type` - The badge type to retrieve
+        ///
+        /// # Returns
+        ///
+        /// Returns `Option<Badge>` containing the badge details, or `None`
         #[ink(message)]
         pub fn get_badge(&self, property_id: u64, badge_type: BadgeType) -> Option<Badge> {
             self.property_badges.get((property_id, badge_type))
         }
 
+        /// Returns a verification request by its ID.
+        ///
+        /// # Arguments
+        ///
+        /// * `request_id` - The verification request ID to look up
+        ///
+        /// # Returns
+        ///
+        /// Returns `Option<VerificationRequest>` with the request details, or `None`
         #[ink(message)]
         pub fn get_verification_request(&self, request_id: u64) -> Option<VerificationRequest> {
             self.verification_requests.get(request_id)
         }
 
+        /// Returns an appeal by its ID.
+        ///
+        /// # Arguments
+        ///
+        /// * `appeal_id` - The appeal ID to look up
+        ///
+        /// # Returns
+        ///
+        /// Returns `Option<Appeal>` with the appeal details, or `None`
         #[ink(message)]
         pub fn get_appeal(&self, appeal_id: u64) -> Option<Appeal> {
             self.appeals.get(appeal_id)
@@ -2588,6 +2755,19 @@ mod propchain_contracts {
     }
 
     impl PropertyRegistry {
+        /// Enables fractional ownership for a property by specifying a total share count.
+        ///
+        /// Only the property owner or admin may call this. The total shares must be
+        /// greater than zero.
+        ///
+        /// # Arguments
+        ///
+        /// * `property_id` - The property to fractionalize
+        /// * `total_shares` - The total number of shares to divide the property into
+        ///
+        /// # Returns
+        ///
+        /// Returns `Result<(), Error>` indicating success or failure
         #[ink(message)]
         pub fn enable_fractional(
             &mut self,
@@ -2614,11 +2794,29 @@ mod propchain_contracts {
             Ok(())
         }
 
+        /// Returns the fractional ownership information for a property.
+        ///
+        /// # Arguments
+        ///
+        /// * `property_id` - The property to query
+        ///
+        /// # Returns
+        ///
+        /// Returns `Option<FractionalInfo>` with share details, or `None` if not fractionalized
         #[ink(message)]
         pub fn get_fractional_info(&self, property_id: u64) -> Option<FractionalInfo> {
             self.fractional.get(property_id)
         }
 
+        /// Checks whether a property has fractional ownership enabled.
+        ///
+        /// # Arguments
+        ///
+        /// * `property_id` - The property to check
+        ///
+        /// # Returns
+        ///
+        /// Returns `true` if fractional ownership is active for this property
         #[ink(message)]
         pub fn is_fractional(&self, property_id: u64) -> bool {
             self.fractional

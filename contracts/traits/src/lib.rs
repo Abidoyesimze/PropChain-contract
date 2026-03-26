@@ -4,6 +4,7 @@ pub mod constants;
 pub mod errors;
 pub mod access_control;
 
+pub use errors::*;
 use ink::prelude::string::String;
 use ink::primitives::AccountId;
 pub use errors::*;
@@ -43,12 +44,16 @@ impl core::fmt::Display for OracleError {
             OracleError::PropertyNotFound => write!(f, "Property not found in the oracle system"),
             OracleError::InsufficientSources => write!(f, "Insufficient oracle sources available"),
             OracleError::InvalidValuation => write!(f, "Valuation data is invalid or out of range"),
-            OracleError::Unauthorized => write!(f, "Caller is not authorized to perform this operation"),
+            OracleError::Unauthorized => {
+                write!(f, "Caller is not authorized to perform this operation")
+            }
             OracleError::OracleSourceNotFound => write!(f, "Oracle source does not exist"),
             OracleError::InvalidParameters => write!(f, "Invalid parameters provided"),
             OracleError::PriceFeedError => write!(f, "Error from external price feed"),
             OracleError::AlertNotFound => write!(f, "Price alert not found"),
-            OracleError::InsufficientReputation => write!(f, "Oracle source has insufficient reputation"),
+            OracleError::InsufficientReputation => {
+                write!(f, "Oracle source has insufficient reputation")
+            }
             OracleError::SourceAlreadyExists => write!(f, "Oracle source already registered"),
             OracleError::RequestPending => write!(f, "Valuation request is still pending"),
         }
@@ -74,17 +79,31 @@ impl ContractError for OracleError {
 
     fn error_description(&self) -> &'static str {
         match self {
-            OracleError::PropertyNotFound => "The requested property does not exist in the oracle system",
-            OracleError::InsufficientSources => "Not enough oracle sources are available to provide a reliable valuation",
-            OracleError::InvalidValuation => "The valuation data is invalid, zero, or out of acceptable range",
-            OracleError::Unauthorized => "Caller does not have permission to perform this operation",
+            OracleError::PropertyNotFound => {
+                "The requested property does not exist in the oracle system"
+            }
+            OracleError::InsufficientSources => {
+                "Not enough oracle sources are available to provide a reliable valuation"
+            }
+            OracleError::InvalidValuation => {
+                "The valuation data is invalid, zero, or out of acceptable range"
+            }
+            OracleError::Unauthorized => {
+                "Caller does not have permission to perform this operation"
+            }
             OracleError::OracleSourceNotFound => "The specified oracle source does not exist",
             OracleError::InvalidParameters => "One or more function parameters are invalid",
             OracleError::PriceFeedError => "Failed to retrieve data from external price feed",
             OracleError::AlertNotFound => "The requested price alert does not exist",
-            OracleError::InsufficientReputation => "Oracle source reputation is below required threshold",
-            OracleError::SourceAlreadyExists => "An oracle source with this identifier already exists",
-            OracleError::RequestPending => "A valuation request for this property is already pending",
+            OracleError::InsufficientReputation => {
+                "Oracle source reputation is below required threshold"
+            }
+            OracleError::SourceAlreadyExists => {
+                "An oracle source with this identifier already exists"
+            }
+            OracleError::RequestPending => {
+                "A valuation request for this property is already pending"
+            }
         }
     }
 
@@ -791,4 +810,47 @@ pub trait ComplianceChecker {
     /// Returns true if the account meets current compliance requirements
     #[ink(message)]
     fn is_compliant(&self, account: ink::primitives::AccountId) -> bool;
+}
+
+// =============================================================================
+// Structured Logging (Issue #107)
+// =============================================================================
+
+/// Log severity levels for classifying contract events.
+/// Used by off-chain tooling to filter and prioritize event streams.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, scale::Encode, scale::Decode)]
+#[cfg_attr(
+    feature = "std",
+    derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout)
+)]
+pub enum LogLevel {
+    /// Informational events: resource creation, normal state transitions
+    Info,
+    /// Warning events: unusual conditions that may need attention
+    Warning,
+    /// Error events: operation failures, rejected transactions
+    Error,
+    /// Critical events: security-related, admin changes, emergency actions
+    Critical,
+}
+
+/// Event categories for structured log aggregation and filtering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, scale::Encode, scale::Decode)]
+#[cfg_attr(
+    feature = "std",
+    derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout)
+)]
+pub enum EventCategory {
+    /// Resource creation: property registered, escrow created, token minted
+    Lifecycle,
+    /// State mutations: transfers, metadata updates, status changes
+    StateChange,
+    /// Permission changes: approvals granted or revoked
+    Authorization,
+    /// Value movements: escrow releases, refunds, fee payments
+    Financial,
+    /// System operations: pause, resume, upgrades, config changes
+    Administrative,
+    /// Regulatory and compliance: verification, audit logs, consent
+    Audit,
 }

@@ -7,9 +7,7 @@ license = "MIT"
 publish = false
 
 [lib]
-name = "propchain_monitoring"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ink = { version = "5.0.0", default-features = false }

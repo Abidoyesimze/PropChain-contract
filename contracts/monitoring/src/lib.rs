@@ -12,12 +12,7 @@ mod monitoring {
     // =========================================================================
 
     #[derive(
-        Debug,
-        Clone,
-        Default,
-        scale::Encode,
-        scale::Decode,
-        ink::storage::traits::StorageLayout,
+        Debug, Clone, Default, scale::Encode, scale::Decode, ink::storage::traits::StorageLayout,
     )]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     struct OperationRecord {
@@ -121,24 +116,21 @@ mod monitoring {
             self.ensure_authorized()?;
 
             let now = self.env().block_timestamp();
-            let mut record = self
-                .operation_records
-                .get(operation)
-                .unwrap_or_default();
+            let mut record = self.operation_records.get(operation).unwrap_or_default();
 
-            record.total_calls += 1;
+            record.total_calls = record.total_calls.saturating_add(1);
             record.last_called_at = now;
             if success {
-                record.success_count += 1;
+                record.success_count = record.success_count.saturating_add(1);
             } else {
-                record.error_count += 1;
+                record.error_count = record.error_count.saturating_add(1);
                 record.last_error_at = now;
             }
             self.operation_records.insert(operation, &record);
 
-            self.total_calls += 1;
+            self.total_calls = self.total_calls.saturating_add(1);
             if !success {
-                self.total_errors += 1;
+                self.total_errors = self.total_errors.saturating_add(1);
             }
 
             self.check_and_trigger_alerts();
@@ -155,10 +147,7 @@ mod monitoring {
         /// Returns accumulated metrics for a specific operation type.
         #[ink(message)]
         fn get_performance_metrics(&self, operation: OperationType) -> PerformanceMetrics {
-            let record = self
-                .operation_records
-                .get(operation)
-                .unwrap_or_default();
+            let record = self.operation_records.get(operation).unwrap_or_default();
             let error_rate_bips =
                 Self::compute_error_rate_bips(record.error_count, record.total_calls);
             PerformanceMetrics {
@@ -239,7 +228,7 @@ mod monitoring {
                 timestamp: now,
             });
 
-            self.snapshot_count += 1;
+            self.snapshot_count = self.snapshot_count.saturating_add(1);
             Ok(())
         }
 
@@ -279,10 +268,7 @@ mod monitoring {
 
         /// Manually override the stored health status. Admin only.
         #[ink(message)]
-        pub fn set_health_status(
-            &mut self,
-            status: HealthStatus,
-        ) -> Result<(), MonitoringError> {
+        pub fn set_health_status(&mut self, status: HealthStatus) -> Result<(), MonitoringError> {
             self.ensure_admin()?;
             let old = self.health_status;
             self.health_status = status;
@@ -332,10 +318,7 @@ mod monitoring {
 
         /// Add an account to the alert subscriber list. Admin only.
         #[ink(message)]
-        pub fn subscribe_alerts(
-            &mut self,
-            subscriber: AccountId,
-        ) -> Result<(), MonitoringError> {
+        pub fn subscribe_alerts(&mut self, subscriber: AccountId) -> Result<(), MonitoringError> {
             self.ensure_admin()?;
             if self.alert_subscribers.len() >= constants::MONITORING_MAX_SUBSCRIBERS {
                 return Err(MonitoringError::SubscriberLimitReached);
@@ -348,10 +331,7 @@ mod monitoring {
 
         /// Remove an account from the alert subscriber list. Admin only.
         #[ink(message)]
-        pub fn unsubscribe_alerts(
-            &mut self,
-            subscriber: AccountId,
-        ) -> Result<(), MonitoringError> {
+        pub fn unsubscribe_alerts(&mut self, subscriber: AccountId) -> Result<(), MonitoringError> {
             self.ensure_admin()?;
             let pos = self
                 .alert_subscribers
@@ -439,10 +419,7 @@ mod monitoring {
 
         /// Transfer admin rights to a new account. Admin only.
         #[ink(message)]
-        pub fn transfer_admin(
-            &mut self,
-            new_admin: AccountId,
-        ) -> Result<(), MonitoringError> {
+        pub fn transfer_admin(&mut self, new_admin: AccountId) -> Result<(), MonitoringError> {
             self.ensure_admin()?;
             self.admin = new_admin;
             Ok(())
@@ -461,9 +438,7 @@ mod monitoring {
 
         fn ensure_authorized(&self) -> Result<(), MonitoringError> {
             let caller = self.env().caller();
-            if caller == self.admin
-                || self.authorized_reporters.get(caller).unwrap_or(false)
-            {
+            if caller == self.admin || self.authorized_reporters.get(caller).unwrap_or(false) {
                 return Ok(());
             }
             Err(MonitoringError::Unauthorized)
@@ -474,8 +449,14 @@ mod monitoring {
             if total == 0 {
                 return 0;
             }
-            ((errors * constants::BASIS_POINTS_DENOMINATOR as u64) / total)
-                .min(constants::BASIS_POINTS_DENOMINATOR as u64) as u32
+            let bips = errors
+                .saturating_mul(constants::BASIS_POINTS_DENOMINATOR as u64)
+                .checked_div(total)
+                .unwrap_or(0)
+                .min(constants::BASIS_POINTS_DENOMINATOR as u64);
+            // Safety: value is clamped to BASIS_POINTS_DENOMINATOR (10_000) which fits in u32
+            #[allow(clippy::cast_possible_truncation)]
+            { bips as u32 }
         }
 
         fn compute_health_status(error_rate_bips: u32) -> HealthStatus {
@@ -691,14 +672,10 @@ mod monitoring {
             let mut c = new_contract();
             c.pause().unwrap();
             assert_eq!(c.get_system_status(), HealthStatus::Paused);
-            assert!(c
-                .record_operation(OperationType::Generic, true)
-                .is_err());
+            assert!(c.record_operation(OperationType::Generic, true).is_err());
             c.resume().unwrap();
             assert_eq!(c.get_system_status(), HealthStatus::Healthy);
-            assert!(c
-                .record_operation(OperationType::Generic, true)
-                .is_ok());
+            assert!(c.record_operation(OperationType::Generic, true).is_ok());
         }
 
         #[ink::test]

@@ -7,9 +7,9 @@ pub mod monitoring;
 
 pub use access_control::*;
 pub use errors::*;
-pub use monitoring::*;
 use ink::prelude::string::String;
 use ink::primitives::AccountId;
+pub use monitoring::*;
 
 /// Error types for the Property Valuation Oracle
 #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]

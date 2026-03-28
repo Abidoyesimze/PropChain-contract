@@ -8,7 +8,9 @@ use scale_info::TypeInfo;
 use crate::errors::{monitoring_codes, ContractError, ErrorCategory};
 
 /// Classifies which contract operation is being recorded.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, ink::storage::traits::StorageLayout)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, ink::storage::traits::StorageLayout,
+)]
 #[cfg_attr(feature = "std", derive(TypeInfo))]
 pub enum OperationType {
     RegisterProperty,
@@ -30,7 +32,9 @@ pub enum OperationType {
 }
 
 /// Overall health of the monitored system.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, ink::storage::traits::StorageLayout)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, ink::storage::traits::StorageLayout,
+)]
 #[cfg_attr(feature = "std", derive(TypeInfo))]
 pub enum HealthStatus {
     Healthy,
@@ -40,7 +44,9 @@ pub enum HealthStatus {
 }
 
 /// Category of alert condition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, ink::storage::traits::StorageLayout)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, ink::storage::traits::StorageLayout,
+)]
 #[cfg_attr(feature = "std", derive(TypeInfo))]
 pub enum AlertType {
     /// Fires when the overall error rate (in bips) exceeds the configured threshold.
@@ -130,7 +136,9 @@ impl ContractError for MonitoringError {
             MonitoringError::SubscriberLimitReached => {
                 monitoring_codes::MONITORING_SUBSCRIBER_LIMIT_REACHED
             }
-            MonitoringError::SubscriberNotFound => monitoring_codes::MONITORING_SUBSCRIBER_NOT_FOUND,
+            MonitoringError::SubscriberNotFound => {
+                monitoring_codes::MONITORING_SUBSCRIBER_NOT_FOUND
+            }
         }
     }
 
